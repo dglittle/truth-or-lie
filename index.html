@@ -1,0 +1,145 @@
+<html>
+<head>
+<title>Truth or Lie</title>
+<style>
+</style>
+</head>
+<body>
+<script src="//code.jquery.com/jquery-2.0.3.min.js"></script>
+<script src="/gl519/jquery.cookie.js"></script>
+<script src="/gl519/index.js"></script>
+<script>
+
+function onError(msg) {
+    alert((msg || 'Oops. Not sure what happened.') + '\n\n' +
+        'Please try refreshing the page.')
+}
+
+g_rpc_version = $.cookie('rpc_version')
+g_rpc_token = $.cookie('rpc_token')
+g_rpc_timer = null
+g_rpc = []
+
+function rpc(func, arg, cb) {
+    if (typeof(arg) == 'function') return rpc(func, null, arg)
+    g_rpc.push({
+        payload : { func : func, arg : arg },
+        cb : cb
+    })
+    if (g_rpc_timer) clearTimeout(g_rpc_timer)
+    g_rpc_timer = setTimeout(function () {
+        g_rpc_timer = null
+        var save_rpc = g_rpc
+        g_rpc = []
+        $.ajax({
+            url : '/rpc/' + g_rpc_version + '/' + g_rpc_token,
+            type : 'post',
+            data : _.json(_.map(save_rpc, function (e) { return e.payload })),
+            success : function (r) {
+                _.each(r, function (r, i) {
+                    if (save_rpc[i].cb)
+                        save_rpc[i].cb(r)
+                })
+            },
+            error : function (s) {
+                onError(s.responseText)
+            }
+        })
+    }, 0)
+}
+
+function createThrobber() {
+    var d = $("<div />");
+    for (var i = 0; i < 10; i++) {
+        $("<span />").text(".")
+                     .appendTo(d)
+                     .css({ color: i === 0 ? "#000" : "#ccc" });
+    }
+    var timer = setInterval(function () {
+        if ($.contains(document.documentElement, d[0])) {
+            d.find("span:last").prependTo(d);
+        } else {
+            clearInterval(timer);
+        }
+    }, 300);
+    return d;
+}
+
+///
+
+function mturkSubmit() {
+    var params = _.getUrlParams()
+    var f = $('<form action="' + params.turkSubmitTo + '/mturk/externalSubmit" method="GET"><input type="hidden" name="assignmentId" value="' + params.assignmentId + '"></input><input type="hidden" name="unused" value="unused"></input></form>')
+    $('body').append(f)
+    f.submit()
+}
+
+function mturkCheckPreview() {
+    var params = _.getUrlParams()
+    if (params.assignmentId == "ASSIGNMENT_ID_NOT_AVAILABLE") {
+        _.dialog($('<div style="background-color: rgba(0,0,0,0.5);color:white;font-size:xx-large;padding:10px"/>').text('preview'), false)
+        $('body').click(function () {
+            alert('This is a preview. Please accept the HIT to work on it.')
+        })
+        return true
+    }
+}
+
+function isHIT() {
+    var params = _.getUrlParams()
+    return !!params.assignmentId
+}
+
+///
+
+function drawWhichVideoIsALie(videoA, videoB, cb) {
+    var d = $('<div/>')
+    d.append($('<div/>').text('Which is a lie?'))
+
+    function createRow(video) {
+        var d = $('<div style="margin-top:7px"/>')
+        d.append($('<iframe style="float:left" width="560" height="315" src="//www.youtube.com/embed/' + video + '?rel=0" frameborder="0" allowfullscreen></iframe>'))
+        d.append($('<button style="float:left;height:315;margin-left:7px"/>').text('\u2190 This is the lie!').click(function () {
+            cb(video)
+        }))
+        d.append($('<div style="clear:both"/>'))
+        return d
+    }
+
+    d.append(createRow(videoA))
+    d.append(createRow(videoB))
+
+    return d
+}
+
+$(function () {
+    var hit = isHIT()
+    var preview = mturkCheckPreview()
+
+    var d = $('<div/>')
+    d.append(createThrobber())
+    rpc('getPair', preview, function (pair) {
+        if (pair) {
+            d.empty().append(drawWhichVideoIsALie(pair.a, pair.b, function (lie) {
+                if (preview) {
+                    alert('you must accept the HIT first')
+                    return
+                }
+                rpc('identifyLie', {
+                    pair : pair._id,
+                    lie : lie
+                }, function () {
+                    if (hit) mturkSubmit()
+                    else window.location.reload()
+                })
+            }))
+        } else {
+            d.empty().text("you've voted on everything already, sorry!")
+        }
+    })
+    $('body').append(d)
+})
+
+</script>
+</body>
+</html>
