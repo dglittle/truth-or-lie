@@ -50,6 +50,8 @@ _.run(function () {
     }))
 
     app.use(function (req, res, next) {
+        if (req.query.workerId)
+            req.session.user = 'mturk:' + req.query.workerId
         if (!req.session.user)
             req.session.user = _.randomString(1, /[A-Z]/) + _.randomString(5, /[a-z]/)
         req.user = req.session.user
